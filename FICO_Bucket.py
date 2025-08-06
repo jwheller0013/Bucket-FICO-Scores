@@ -149,3 +149,68 @@ class FICOQuantizer:
             stats.append(stat_dict)
         
         self.bucket_stats = pd.DataFrame(stats)
+
+    def get_rating(self, fico_score):
+        """
+        Get rating for a FICO score.
+        
+        Parameters:
+        - fico_score: FICO score to rate
+        
+        Returns:
+        - rating: integer rating (1=best, higher=worse)
+        """
+        if self.boundaries is None:
+            raise ValueError("Quantizer not fitted yet! Call fit() first.")
+        
+        # Find which bucket the score falls into
+        for i in range(len(self.boundaries) - 1):
+            if self.boundaries[i] <= fico_score <= self.boundaries[i + 1]:
+                return i + 1
+        
+        # Handle edge cases
+        if fico_score < self.boundaries[0]:
+            return len(self.boundaries) - 1  # Worst rating for very low scores
+        elif fico_score > self.boundaries[-1]:
+            return 1  # Best rating for very high scores
+        
+        return len(self.boundaries) - 1
+    
+    def transform(self, fico_scores):
+        """Transform multiple FICO scores to ratings."""
+        if isinstance(fico_scores, (int, float)):
+            return self.get_rating(fico_scores)
+        
+        return [self.get_rating(score) for score in fico_scores]
+    
+    def display_results(self):
+        """Display quantization results."""
+        if self.bucket_stats is None:
+            print("Quantizer not fitted yet!")
+            return
+        
+        print("\n" + "="*100)
+        print("FICO SCORE MSE QUANTIZATION RESULTS")
+        print("="*100)
+        print("Note: Rating 1 = Best credit score, Higher rating = Worse credit score")
+        print(f"Total MSE: {self.total_mse:.2f}")
+        print("-"*100)
+        
+        # Format display
+        display_cols = ['Rating', 'FICO_Range', 'Count', 'Count_Pct', 'Avg_FICO', 'Std_FICO', 'Bucket_MSE']
+        if 'Default_Rate' in self.bucket_stats.columns:
+            display_cols.extend(['Default_Count', 'Default_Rate'])
+        
+        display_df = self.bucket_stats[display_cols].copy()
+        
+        # Round numeric columns
+        for col in ['Count_Pct', 'Avg_FICO', 'Std_FICO', 'Bucket_MSE', 'Default_Rate']:
+            if col in display_df.columns:
+                display_df[col] = display_df[col].round(2)
+        
+        print(display_df.to_string(index=False))
+        print("-"*100)
+        
+        print(f"Bucket Boundaries: {[round(b, 1) for b in self.boundaries]}")
+        print(f"Number of Buckets: {len(self.boundaries) - 1}")
+
