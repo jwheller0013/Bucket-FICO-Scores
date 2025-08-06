@@ -258,3 +258,68 @@ print(f"{'='*80}")
 
 for score in test_scores:
     test_fico_rating(score, quantizer)
+
+# Simple function for easy use
+def get_fico_rating(fico_score):
+    """
+    Get FICO rating using MSE quantization.
+    
+    Parameters:
+    - fico_score: FICO score to rate
+    
+    Returns:
+    - rating: integer rating (1=best, higher=worse)
+    """
+    return quantizer.get_rating(fico_score)
+
+# Integration with loan assessment
+def enhanced_loan_assessment_with_rating(loan_data):
+    """
+    Enhanced loan assessment that includes MSE-optimized FICO rating.
+    """
+    fico_score = loan_data['fico_score']
+    fico_rating = get_fico_rating(fico_score)
+    
+    # Add rating to loan data
+    enhanced_loan_data = loan_data.copy()
+    enhanced_loan_data['fico_rating'] = fico_rating
+    
+    # Get rating statistics
+    bucket_info = quantizer.bucket_stats[quantizer.bucket_stats['Rating'] == fico_rating].iloc[0]
+    
+    print(f"\n{'='*60}")
+    print("ENHANCED LOAN ASSESSMENT WITH MSE FICO RATING")
+    print(f"{'='*60}")
+    print(f"FICO Score: {fico_score}")
+    print(f"MSE-Optimized Rating: {fico_rating} (1=Best, Higher=Worse)")
+    print(f"Rating Range: {bucket_info['FICO_Range']}")
+    print(f"Avg FICO in Rating: {bucket_info['Avg_FICO']:.1f}")
+    
+    if 'Default_Rate' in bucket_info:
+        print(f"Expected Default Rate: {bucket_info['Default_Rate']:.2f}%")
+    
+    return enhanced_loan_data, fico_rating
+
+# Example usage
+sample_loan = {
+    'credit_lines_outstanding': 2,
+    'loan_amt_outstanding': 15000.0,
+    'total_debt_outstanding': 5000.0,
+    'income': 75000.0,
+    'years_employed': 5,
+    'fico_score': 680
+}
+
+enhanced_data, rating = enhanced_loan_assessment_with_rating(sample_loan)
+
+print(f"\n{'='*80}")
+print("MSE QUANTIZATION SYSTEM READY!")
+print(f"{'='*80}")
+print("Use get_fico_rating(fico_score) to get MSE-optimized ratings")
+print("Use enhanced_loan_assessment_with_rating(loan_data) for full analysis")
+
+# Quick demonstration
+print(f"\nQuick Examples:")
+for score in [600, 700, 800]:
+    rating = get_fico_rating(score)
+    print(f"FICO {score} -> Rating {rating}")
