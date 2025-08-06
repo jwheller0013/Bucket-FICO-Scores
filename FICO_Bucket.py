@@ -89,3 +89,63 @@ class FICOQuantizer:
         print(f"Optimal Total MSE: {self.total_mse:.2f}")
         
         return boundaries
+    
+    def fit(self, fico_scores, default_flags=None):
+        """
+        Fit the MSE quantizer to the data.
+        
+        Parameters:
+        - fico_scores: array of FICO scores
+        - default_flags: array of default indicators (optional, for analysis)
+        """
+        self.boundaries = self.mse_quantization(fico_scores)
+        
+        # Calculate bucket statistics
+        self._calculate_bucket_stats(fico_scores, default_flags)
+        
+        return self
+    
+    def _calculate_bucket_stats(self, fico_scores, default_flags=None):
+        """Calculate statistics for each bucket."""
+        df = pd.DataFrame({'fico': fico_scores})
+        if default_flags is not None:
+            df['default'] = default_flags
+        
+        # Assign buckets (ratings)
+        df['bucket'] = pd.cut(df['fico'], bins=self.boundaries, include_lowest=True, labels=False)
+        df['bucket'] = df['bucket'] + 1  # Start ratings from 1
+        
+        # Calculate statistics for each bucket
+        stats = []
+        for rating in sorted(df['bucket'].unique()):
+            bucket_data = df[df['bucket'] == rating]
+            bucket_scores = bucket_data['fico']
+            
+            # Calculate MSE for this bucket
+            bucket_mean = bucket_scores.mean()
+            bucket_mse = np.sum((bucket_scores - bucket_mean) ** 2)
+            
+            stat_dict = {
+                'Rating': rating,
+                'FICO_Range': f"{self.boundaries[rating-1]:.0f}-{self.boundaries[rating]:.0f}",
+                'Count': len(bucket_data),
+                'Count_Pct': len(bucket_data) / len(df) * 100,
+                'Min_FICO': bucket_scores.min(),
+                'Max_FICO': bucket_scores.max(),
+                'Avg_FICO': bucket_mean,
+                'Std_FICO': bucket_scores.std(),
+                'Bucket_MSE': bucket_mse,
+            }
+            
+            # Add default statistics if available
+            if default_flags is not None:
+                default_rate = bucket_data['default'].mean()
+                stat_dict.update({
+                    'Default_Rate': default_rate * 100,
+                    'Default_Count': int(bucket_data['default'].sum()),
+                    'Good_Count': int((bucket_data['default'] == 0).sum()),
+                })
+            
+            stats.append(stat_dict)
+        
+        self.bucket_stats = pd.DataFrame(stats)
