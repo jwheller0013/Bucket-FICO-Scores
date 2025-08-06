@@ -7,7 +7,7 @@ def load_data():
     except FileNotFoundError:
         print("File not found. Please ensure the file is in the correct directory.")
         return None
-    return 
+    return df
 
 #Decided to use Mean Squared Error (MSE) as the evaluation metric
 
@@ -214,3 +214,47 @@ class FICOQuantizer:
         print(f"Bucket Boundaries: {[round(b, 1) for b in self.boundaries]}")
         print(f"Number of Buckets: {len(self.boundaries) - 1}")
 
+def test_fico_rating(fico_score, quantizer):
+    """Test rating for a specific FICO score with detailed output."""
+    rating = quantizer.get_rating(fico_score)
+    
+    # Get bucket information
+    bucket_info = quantizer.bucket_stats[quantizer.bucket_stats['Rating'] == rating].iloc[0]
+    
+    print(f"FICO SCORE RATING ANALYSIS")
+    print(f"FICO Score: {fico_score}")
+    print(f"Rating: {rating} (1=Best, Higher=Worse)")
+    print(f"Rating Range: {bucket_info['FICO_Range']}")
+    print(f"Average FICO in Rating: {bucket_info['Avg_FICO']:.1f}")
+    print(f"Standard Deviation: {bucket_info['Std_FICO']:.1f}")
+    print(f"Population in Rating: {bucket_info['Count']:,} ({bucket_info['Count_Pct']:.1f}%)")
+    
+    if 'Default_Rate' in bucket_info:
+        print(f"Expected Default Rate: {bucket_info['Default_Rate']:.2f}%")
+    
+    return rating
+
+print("FICO SCORE MSE QUANTIZATION SYSTEM")
+# Load data
+df = load_data()
+
+print(f"\nDataset Overview:")
+print(f"FICO score range: {df['fico_score'].min()} - {df['fico_score'].max()}")
+print(f"Default rate: {df['default'].mean():.2%}")
+print(f"Sample size: {len(df):,}")
+
+# Initialize and fit quantizer
+quantizer = FICOQuantizer(n_buckets=8)
+quantizer.fit(df['fico_score'], df['default'])
+
+# Display results
+quantizer.display_results()
+
+# Test individual FICO scores
+test_scores = [300, 500, 620, 680, 720, 780, 850]
+print(f"\n{'='*80}")
+print("TESTING INDIVIDUAL FICO SCORES")
+print(f"{'='*80}")
+
+for score in test_scores:
+    test_fico_rating(score, quantizer)
