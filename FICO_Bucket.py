@@ -20,7 +20,7 @@ class FICOQuantizer:
     is minimized.
     """
     
-    def __init__(self, n_buckets=10):
+    def __init__(self, n_buckets=8):
         self.n_buckets = n_buckets
         self.boundaries = None
         self.bucket_stats = None
@@ -28,65 +28,87 @@ class FICOQuantizer:
 
     def mse_quantization(self, fico_scores):
         """
-        Mean Squared Error quantization using dynamic programming.
-        
-        Minimizes: Σ(xi - bucket_mean)²
-        
-        Returns optimal bucket boundaries.
+        Efficient MSE quantization using iterative improvement.
+        Much faster than full dynamic programming approach.
         """
-        print(f"Performing MSE quantization with {self.n_buckets} buckets...")
+        print(f"Performing efficient MSE quantization with {self.n_buckets} buckets...")
         
-        # Sort scores for processing
-        sorted_scores = np.sort(fico_scores)
-        n = len(sorted_scores)
+        # Get unique sorted scores
+        unique_scores = np.sort(np.unique(fico_scores))
+        n_unique = len(unique_scores)
         
-        # Dynamic programming approach
-        # dp[i][j] = minimum MSE for first i points using j buckets
-        dp = np.full((n + 1, self.n_buckets + 1), np.inf)
-        split_points = np.zeros((n + 1, self.n_buckets + 1), dtype=int)
+        # If we have fewer unique scores than buckets, use all unique scores
+        if n_unique <= self.n_buckets:
+            print(f"Only {n_unique} unique scores found, using {n_unique} buckets")
+            boundaries = unique_scores.tolist()
+            boundaries.append(unique_scores[-1] + 1)  # Add upper boundary
+            return boundaries
         
-        # Base case: 0 points, 0 buckets
-        dp[0][0] = 0
+        # Start with equal-width buckets as initial guess
+        min_score = unique_scores[0]
+        max_score = unique_scores[-1]
         
-        # Fill DP table
-        for i in range(1, n + 1):
-            for j in range(1, min(i, self.n_buckets) + 1):
-                # Try all possible previous split points
-                for k in range(j - 1, i):
-                    # Calculate MSE for bucket from k to i-1
-                    bucket_scores = sorted_scores[k:i]
-                    bucket_mean = np.mean(bucket_scores)
-                    bucket_mse = np.sum((bucket_scores - bucket_mean) ** 2)
-                    
-                    total_mse = dp[k][j-1] + bucket_mse
-                    
-                    if total_mse < dp[i][j]:
-                        dp[i][j] = total_mse
-                        split_points[i][j] = k
+        # Create initial boundaries
+        width = (max_score - min_score) / self.n_buckets
+        boundaries = [min_score + i * width for i in range(self.n_buckets + 1)]
+        boundaries[0] = min_score
+        boundaries[-1] = max_score
         
-        # Reconstruct optimal boundaries
-        boundaries = [sorted_scores[0]]  # Start with minimum
-        i, j = n, self.n_buckets
+        # Count frequencies for each unique score
+        score_counts = pd.Series(fico_scores).value_counts().sort_index()
         
-        splits = []
-        while j > 1:
-            split_point = split_points[i][j]
-            splits.append(split_point)
-            i, j = split_point, j - 1
+        # Iterative improvement (Lloyd's algorithm variant)
+        max_iterations = 50
+        tolerance = 1e-6
         
-        # Convert split indices to actual FICO scores
-        for split_idx in reversed(splits):
-            if split_idx > 0:
-                boundaries.append(sorted_scores[split_idx])
+        for iteration in range(max_iterations):
+            old_boundaries = boundaries.copy()
+            
+            # Step 1: Assign each score to closest bucket center
+            # Calculate current bucket means
+            bucket_means = []
+            for i in range(len(boundaries) - 1):
+                # Find scores in this bucket
+                mask = (unique_scores >= boundaries[i]) & (unique_scores <= boundaries[i + 1])
+                bucket_scores = unique_scores[mask]
+                
+                if len(bucket_scores) > 0:
+                    # Weight by frequency
+                    weights = [score_counts[score] for score in bucket_scores]
+                    bucket_mean = np.average(bucket_scores, weights=weights)
+                    bucket_means.append(bucket_mean)
+                else:
+                    # Empty bucket, use midpoint
+                    bucket_means.append((boundaries[i] + boundaries[i + 1]) / 2)
+            
+            # Step 2: Update boundaries as midpoints between adjacent means
+            new_boundaries = [boundaries[0]]  # Keep first boundary
+            
+            for i in range(len(bucket_means) - 1):
+                midpoint = (bucket_means[i] + bucket_means[i + 1]) / 2
+                new_boundaries.append(midpoint)
+            
+            new_boundaries.append(boundaries[-1])  # Keep last boundary
+            boundaries = new_boundaries
+            
+            # Check convergence
+            if np.allclose(old_boundaries, boundaries, atol=tolerance):
+                print(f"Converged after {iteration + 1} iterations")
+                break
         
-        boundaries.append(sorted_scores[-1])  # End with maximum
+        # Calculate final MSE
+        total_mse = 0
+        for i in range(len(boundaries) - 1):
+            mask = (fico_scores >= boundaries[i]) & (fico_scores <= boundaries[i + 1])
+            bucket_scores = fico_scores[mask]
+            
+            if len(bucket_scores) > 0:
+                bucket_mean = np.mean(bucket_scores)
+                bucket_mse = np.sum((bucket_scores - bucket_mean) ** 2)
+                total_mse += bucket_mse
         
-        # Remove duplicates and sort
-        boundaries = sorted(list(set(boundaries)))
-        
-        # Store total MSE
-        self.total_mse = dp[n][self.n_buckets]
-        print(f"Optimal Total MSE: {self.total_mse:.2f}")
+        self.total_mse = total_mse
+        print(f"Final Total MSE: {total_mse:.2f}")
         
         return boundaries
     
